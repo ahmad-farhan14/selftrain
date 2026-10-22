@@ -44,17 +44,34 @@ create table if not exists public.active_workouts (
   updated_at timestamptz default now()
 );
 
+create table if not exists public.daily_activity (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  activity_date date not null,
+  did_login boolean not null default false,
+  did_workout boolean not null default false,
+  updated_at timestamptz default now(),
+  primary key (user_id, activity_date)
+);
+
 alter table public.profiles enable row level security;
 alter table public.workout_logs enable row level security;
 alter table public.nutrition_logs enable row level security;
 alter table public.custom_exercises enable row level security;
 alter table public.active_workouts enable row level security;
+alter table public.daily_activity enable row level security;
 
+drop policy if exists "Users manage own profile" on public.profiles;
 create policy "Users manage own profile" on public.profiles for all using (auth.uid() = id) with check (auth.uid() = id);
+drop policy if exists "Users manage own workout logs" on public.workout_logs;
 create policy "Users manage own workout logs" on public.workout_logs for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "Users manage own nutrition logs" on public.nutrition_logs;
 create policy "Users manage own nutrition logs" on public.nutrition_logs for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "Users manage own custom exercises" on public.custom_exercises;
 create policy "Users manage own custom exercises" on public.custom_exercises for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "Users manage own active workout" on public.active_workouts;
 create policy "Users manage own active workout" on public.active_workouts for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "Users manage own daily activity" on public.daily_activity;
+create policy "Users manage own daily activity" on public.daily_activity for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 create or replace function public.handle_new_user()
 returns trigger

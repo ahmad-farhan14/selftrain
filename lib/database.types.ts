@@ -30,6 +30,10 @@ export type Database = {
         { user_id: string; workout: Json; updated_at: string | null },
         { user_id: string; workout: Json; updated_at?: string | null }
       >;
+      daily_activity: Table<
+        { user_id: string; activity_date: string; did_login: boolean; did_workout: boolean; updated_at: string | null },
+        { user_id: string; activity_date: string; did_login?: boolean; did_workout?: boolean; updated_at?: string | null }
+      >;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
