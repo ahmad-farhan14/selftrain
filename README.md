@@ -26,6 +26,10 @@ Open [http://localhost:3000](http://localhost:3000). Run `npm run build` and `np
 
 Workout state, custom exercises, nutrition logs, timer preferences, login streaks, and activity calendar are saved locally first. When signed in, the active snapshot, daily check-in/workout activity, and individual completed set/food entries are also written to Supabase. The browser client only uses the public anon key; row-level security restricts data to its authenticated owner.
 
+## Embedded exercise videos
+
+Enable the YouTube Data API v3 in a Google Cloud project, create an API key, and set `YOUTUBE_API_KEY` in `.env.local` and your deployment environment. The key is used only by the server-side form-guide route and is never sent to the browser.
+
 ## Core features
 
 - Responsive desktop sidebar and mobile bottom navigation in a dark emerald-accented theme.

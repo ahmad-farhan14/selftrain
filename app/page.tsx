@@ -182,6 +182,9 @@ export default function Home() {
   const [showStreakPopup, setShowStreakPopup] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [previewExercise, setPreviewExercise] = useState<string | null>(null);
+  const [formGuideVideoId, setFormGuideVideoId] = useState<string | null>(null);
+  const [formGuideVideoLoading, setFormGuideVideoLoading] = useState(false);
+  const [formGuideVideoError, setFormGuideVideoError] = useState("");
   const [exerciseName, setExerciseName] = useState("");
   const [muscle, setMuscle] = useState("Chest");
   const [showExerciseForm, setShowExerciseForm] = useState(false);
@@ -193,6 +196,41 @@ export default function Home() {
   const timerPreset = data.timerPreset;
   const todayKey = localDateKey(new Date());
   const currentStreak = calculateStreak(data.streakDays, todayKey);
+
+  useEffect(() => {
+    if (!previewExercise) {
+      setFormGuideVideoId(null);
+      setFormGuideVideoLoading(false);
+      setFormGuideVideoError("");
+      return;
+    }
+
+    const controller = new AbortController();
+    setFormGuideVideoId(null);
+    setFormGuideVideoLoading(true);
+    setFormGuideVideoError("");
+    void fetch(`/api/form-guide?exercise=${encodeURIComponent(previewExercise)}`, { signal: controller.signal })
+      .then(async (response) => {
+        const result = await response.json() as { videoId?: unknown; error?: unknown };
+        if (!response.ok) {
+          throw new Error(typeof result.error === "string" ? result.error : "Could not load a form video.");
+        }
+        if (typeof result.videoId !== "string" || !/^[\w-]{11}$/.test(result.videoId)) {
+          throw new Error("The form video response was invalid.");
+        }
+        setFormGuideVideoId(result.videoId);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        console.error("Could not load the exercise form video.", error);
+        setFormGuideVideoError(error instanceof Error ? error.message : "Could not load a form video.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setFormGuideVideoLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [previewExercise]);
   const stopwatchSeconds = data.stopwatchElapsed + (data.stopwatchStartedAt
     ? Math.max(0, Math.floor((Date.now() - new Date(data.stopwatchStartedAt).getTime()) / 1000))
     : 0);
@@ -605,7 +643,7 @@ export default function Home() {
                     <div className={`set-head ${bodyweight ? "bodyweight-head" : ""}`}><span>SET</span><span>{bodyweight ? "BODYWEIGHT" : <>WEIGHT <small>kg</small></>}</span><span>{exercise.name.toLowerCase() === "planks" ? "SECONDS" : "REPS"}</span><span>DONE</span></div>
                     <div className="set-list">{exercise.sets.map((set, setIndex) => <div className={`set-row ${set.done ? "set-complete" : ""}`} key={set.id}>
                       <span className="set-number">{String(setIndex + 1).padStart(2, "0")}</span>
-                      {bodyweight ? <span className="bodyweight-label">Bodyweight</span> : <label className="number-field"><input aria-label={`${exercise.name} set ${setIndex + 1} weight in kg`} inputMode="decimal" type="number" min="0" step="0.5" value={set.weight} onChange={(event) => updateSet(exercise.id, set.id, { weight: Number(event.target.value) })} /></label>}
+                      <label className="number-field"><input aria-label={`${exercise.name} set ${setIndex + 1} weight in kg`} inputMode="decimal" type="number" min="0" step="0.5" value={set.weight} onChange={(event) => updateSet(exercise.id, set.id, { weight: Number(event.target.value) })} /></label>
                       <label className="number-field"><input aria-label={`${exercise.name} set ${setIndex + 1} ${exercise.name.toLowerCase() === "planks" ? "seconds" : "reps"}`} inputMode="numeric" type="number" min="0" step="1" value={set.reps} onChange={(event) => updateSet(exercise.id, set.id, { reps: Number(event.target.value) })} /></label>
                       <button aria-label={set.done ? "Mark set incomplete" : "Complete set"} className={`check-button ${set.done ? "checked" : ""}`} onClick={() => completeSet(exercise, set)}>{set.done && <Check size={15} />}</button>
                     </div>)}</div>
@@ -669,7 +707,7 @@ export default function Home() {
 
       {showNutritionForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowNutritionForm(false); }}><section className="modal panel" role="dialog" aria-modal="true" aria-labelledby="nutrition-modal-title"><button className="modal-close" aria-label="Close" onClick={() => setShowNutritionForm(false)}><X size={19} /></button><span className="eyebrow">DAILY FUEL</span><h2 id="nutrition-modal-title">Log nutrition</h2><p>Add your meal totals. You can leave any macro blank.</p><form onSubmit={submitNutrition}><div className="nutrition-form-grid"><label className="form-label">Calories<input type="number" min="0" max="10000" placeholder="0" value={nutritionForm.calories} onChange={(event) => setNutritionForm({ ...nutritionForm, calories: event.target.value })} /></label><label className="form-label">Protein (g)<input type="number" min="0" max="1000" placeholder="0" value={nutritionForm.protein} onChange={(event) => setNutritionForm({ ...nutritionForm, protein: event.target.value })} /></label><label className="form-label">Carbs (g)<input type="number" min="0" max="1000" placeholder="0" value={nutritionForm.carbs} onChange={(event) => setNutritionForm({ ...nutritionForm, carbs: event.target.value })} /></label><label className="form-label">Fat (g)<input type="number" min="0" max="1000" placeholder="0" value={nutritionForm.fat} onChange={(event) => setNutritionForm({ ...nutritionForm, fat: event.target.value })} /></label></div><button className="primary-button full-button" type="submit"><Check size={16} /> Save food log</button></form></section></div>}
 
-      {previewExercise && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewExercise(null); }}><section className="modal panel form-guide-modal" role="dialog" aria-modal="true" aria-labelledby="form-guide-title"><button className="modal-close" aria-label="Close form guide" onClick={() => setPreviewExercise(null)}><X size={19} /></button><span className="eyebrow">EXERCISE FORM GUIDE</span><h2 id="form-guide-title">{previewExercise}</h2><div className="video-preview-stage"><div className="preview-orbit orbit-one" /><div className="preview-orbit orbit-two" /><Dumbbell className="preview-dumbbell" size={54} strokeWidth={1.4} /><span className="preview-stage-label">MOVEMENT PREVIEW</span><a className="preview-play" href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${previewExercise} proper form exercise demonstration`)}`} target="_blank" rel="noreferrer" aria-label={`Find ${previewExercise} form video`}><Play size={20} fill="currentColor" /></a><span className="preview-stage-note">Watch a video demonstration</span></div><div className="form-guide-content"><h3>Form cues</h3><ol>{(formGuides[previewExercise.toLowerCase()] || ["Brace your core and begin with a comfortable, controlled range of motion.", "Keep your joints aligned and avoid rushing through the movement.", "Stop if you feel sharp pain; adjust your position or rest."]).map((tip) => <li key={tip}>{tip}</li>)}</ol><a className="video-search-link" href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${previewExercise} proper form exercise demonstration`)}`} target="_blank" rel="noreferrer"><Video size={15} /> Open video demonstrations <ArrowUpRight size={14} /></a></div></section></div>}
+      {previewExercise && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewExercise(null); }}><section className="modal panel form-guide-modal" role="dialog" aria-modal="true" aria-labelledby="form-guide-title"><button className="modal-close" aria-label="Close form guide" onClick={() => setPreviewExercise(null)}><X size={19} /></button><span className="eyebrow">EXERCISE FORM GUIDE</span><h2 id="form-guide-title">{previewExercise}</h2><div className="video-player">{formGuideVideoLoading ? <p className="video-player-status" role="status">Finding a form video…</p> : formGuideVideoError ? <p className="video-player-status video-player-error" role="alert">{formGuideVideoError}</p> : formGuideVideoId && <iframe title={`${previewExercise} form guide video`} src={`https://www.youtube-nocookie.com/embed/${formGuideVideoId}`} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen />}</div><div className="form-guide-content"><h3>Form cues</h3><ol>{(formGuides[previewExercise.toLowerCase()] || ["Brace your core and begin with a comfortable, controlled range of motion.", "Keep your joints aligned and avoid rushing through the movement.", "Stop if you feel sharp pain; adjust your position or rest."]).map((tip) => <li key={tip}>{tip}</li>)}</ol></div></section></div>}
 
       {showStreakPopup && <div className="modal-backdrop streak-backdrop" role="presentation"><section className="modal panel streak-modal" role="dialog" aria-modal="true" aria-labelledby="streak-modal-title"><button className="modal-close" aria-label="Close streak reward" onClick={() => setShowStreakPopup(false)}><X size={19} /></button><span className="streak-reward-icon"><Flame size={27} /></span><span className="eyebrow">DAILY CHECK-IN REWARD</span><h2 id="streak-modal-title">Day {currentStreak} Streak Active! <span aria-hidden="true">🔥</span></h2><p>You showed up today. Keep your momentum going, one day at a time.</p><ActivityCalendar month={calendarMonth} workoutDays={data.workoutDays} streakDays={data.streakDays} onMonthChange={changeCalendarMonth} /><button className="primary-button full-button" onClick={() => setShowStreakPopup(false)}>Let&apos;s get moving <ArrowRight size={15} /></button></section></div>}
 
