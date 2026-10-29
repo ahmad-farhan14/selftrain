@@ -386,3 +386,21 @@ html, body, .app-shell { background: var(--page-bg); color: var(--text-primary);
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+.language-switcher { display: inline-flex; align-items: center; }
+.language-switcher select {
+  min-width: 57px;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+}
+.language-switcher select:focus-visible { outline-color: var(--accent-blue); }
+@media (max-width: 620px) {
+  .topbar { gap: 8px; }
+  .language-switcher select { min-width: 49px; height: 31px; padding: 0 6px; }
+}

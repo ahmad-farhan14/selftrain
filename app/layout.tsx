@@ -3,12 +3,12 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "SelfTrain — Train for yourself",
-  description: "A simple home for your workouts and daily nutrition.",
+  description: "Catat latihan, nutrisi, dan progres harianmu bersama SelfTrain.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="id">
       <body>{children}</body>
     </html>
   );
