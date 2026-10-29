@@ -173,6 +173,85 @@ function ActivityCalendar({ month, workoutDays, streakDays, onMonthChange }: {
   );
 }
 
+function ExerciseFormGuide({ exerciseName }: { exerciseName: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [videoId, setVideoId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!expanded) return;
+
+    const controller = new AbortController();
+    setVideoId(null);
+    setLoading(true);
+    setError("");
+    void fetch(`/api/form-guide?exercise=${encodeURIComponent(exerciseName)}`, { signal: controller.signal })
+      .then(async (response) => {
+        const result = await response.json() as { videoId?: unknown; error?: unknown };
+        if (!response.ok) {
+          throw new Error(typeof result.error === "string" ? result.error : "Could not load a form video.");
+        }
+        if (typeof result.videoId !== "string" || !/^[\w-]{11}$/.test(result.videoId)) {
+          throw new Error("The form video response was invalid.");
+        }
+        setVideoId(result.videoId);
+      })
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        console.error("Could not load the exercise form video.", cause);
+        setError(cause instanceof Error ? cause.message : "Could not load a form video.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [expanded, exerciseName]);
+
+  const tips = formGuides[exerciseName.toLowerCase()] || [
+    "Brace your core and begin with a comfortable, controlled range of motion.",
+    "Keep your joints aligned and avoid rushing through the movement.",
+    "Stop if you feel sharp pain; adjust your position or rest.",
+  ];
+
+  return (
+    <div className="form-guide">
+      <button
+        className="form-guide-toggle"
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <Video size={13} />
+        {expanded ? "Hide Form Guide" : "Show Form Guide"}
+        <ChevronDown size={13} className={expanded ? "guide-chevron expanded" : "guide-chevron"} />
+      </button>
+      <div className={`form-guide-collapse ${expanded ? "expanded" : ""}`}>
+        <div className="form-guide-body">
+          <div className="form-guide-inline">
+            <div className="video-player">
+              {loading ? <p className="video-player-status" role="status">Finding a form video…</p>
+                : error ? <p className="video-player-status video-player-error" role="alert">{error}</p>
+                  : videoId && <iframe
+                    title={`${exerciseName} form guide video`}
+                    src={`https://www.youtube-nocookie.com/embed/${videoId}`}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    allowFullScreen
+                  />}
+            </div>
+            <div className="form-guide-content">
+              <h3>Form cues</h3>
+              <ol>{tips.map((tip) => <li key={tip}>{tip}</li>)}</ol>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [data, setData] = useState<SavedState>(emptyState);
   const [hydrated, setHydrated] = useState(false);
@@ -181,10 +260,6 @@ export default function Home() {
   const [, setClockTick] = useState(0);
   const [showStreakPopup, setShowStreakPopup] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-  const [previewExercise, setPreviewExercise] = useState<string | null>(null);
-  const [formGuideVideoId, setFormGuideVideoId] = useState<string | null>(null);
-  const [formGuideVideoLoading, setFormGuideVideoLoading] = useState(false);
-  const [formGuideVideoError, setFormGuideVideoError] = useState("");
   const [exerciseName, setExerciseName] = useState("");
   const [muscle, setMuscle] = useState("Chest");
   const [showExerciseForm, setShowExerciseForm] = useState(false);
@@ -197,40 +272,6 @@ export default function Home() {
   const todayKey = localDateKey(new Date());
   const currentStreak = calculateStreak(data.streakDays, todayKey);
 
-  useEffect(() => {
-    if (!previewExercise) {
-      setFormGuideVideoId(null);
-      setFormGuideVideoLoading(false);
-      setFormGuideVideoError("");
-      return;
-    }
-
-    const controller = new AbortController();
-    setFormGuideVideoId(null);
-    setFormGuideVideoLoading(true);
-    setFormGuideVideoError("");
-    void fetch(`/api/form-guide?exercise=${encodeURIComponent(previewExercise)}`, { signal: controller.signal })
-      .then(async (response) => {
-        const result = await response.json() as { videoId?: unknown; error?: unknown };
-        if (!response.ok) {
-          throw new Error(typeof result.error === "string" ? result.error : "Could not load a form video.");
-        }
-        if (typeof result.videoId !== "string" || !/^[\w-]{11}$/.test(result.videoId)) {
-          throw new Error("The form video response was invalid.");
-        }
-        setFormGuideVideoId(result.videoId);
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        console.error("Could not load the exercise form video.", error);
-        setFormGuideVideoError(error instanceof Error ? error.message : "Could not load a form video.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setFormGuideVideoLoading(false);
-      });
-
-    return () => controller.abort();
-  }, [previewExercise]);
   const stopwatchSeconds = data.stopwatchElapsed + (data.stopwatchStartedAt
     ? Math.max(0, Math.floor((Date.now() - new Date(data.stopwatchStartedAt).getTime()) / 1000))
     : 0);
@@ -637,9 +678,9 @@ export default function Home() {
                   return <article className="exercise-card panel" key={exercise.id}>
                     <div className="exercise-card-head"><span className="exercise-index">{String(exerciseIndex + 1).padStart(2, "0")}</span><div className="exercise-title"><h2>{exercise.name}</h2><span>{exercise.muscle}</span></div>
                       {previous && <span className="last-performance"><span>LAST PERFORMANCE</span>{bodyweight ? "Bodyweight" : `${previous.weight} kg`} × {previous.reps} reps</span>}
-                      <button className="form-video-button" onClick={() => setPreviewExercise(exercise.name)}><Video size={14} /><span>Form</span></button>
                       <button className="icon-button remove-button" aria-label={`Remove ${exercise.name}`} onClick={() => setData((current) => ({ ...current, exercises: current.exercises.filter((item) => item.id !== exercise.id) }))}><Trash2 size={16} /></button>
                     </div>
+                    <ExerciseFormGuide exerciseName={exercise.name} />
                     <div className={`set-head ${bodyweight ? "bodyweight-head" : ""}`}><span>SET</span><span>{bodyweight ? "BODYWEIGHT" : <>WEIGHT <small>kg</small></>}</span><span>{exercise.name.toLowerCase() === "planks" ? "SECONDS" : "REPS"}</span><span>DONE</span></div>
                     <div className="set-list">{exercise.sets.map((set, setIndex) => <div className={`set-row ${set.done ? "set-complete" : ""}`} key={set.id}>
                       <span className="set-number">{String(setIndex + 1).padStart(2, "0")}</span>
@@ -706,8 +747,6 @@ export default function Home() {
       {showExerciseForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowExerciseForm(false); }}><section className="modal panel" role="dialog" aria-modal="true" aria-labelledby="exercise-modal-title"><button className="modal-close" aria-label="Close" onClick={() => setShowExerciseForm(false)}><X size={19} /></button><span className="eyebrow">MAKE IT YOURS</span><h2 id="exercise-modal-title">Add an exercise</h2><p>Build your session around what works for you.</p><form onSubmit={addExercise}><label className="form-label">Exercise name<input autoFocus required maxLength={60} list="exercise-suggestions" placeholder="e.g. Dumbbell shoulder press" value={exerciseName} onChange={(event) => { setExerciseName(event.target.value); if (bodyweightExercises.some((name) => name.toLowerCase() === event.target.value.trim().toLowerCase())) setMuscle("Calisthenics / Bodyweight"); }} /><datalist id="exercise-suggestions">{bodyweightExercises.map((name) => <option key={name} value={name} />)}</datalist></label><label className="form-label">Muscle group<select value={muscle} onChange={(event) => setMuscle(event.target.value)}>{["Chest", "Back", "Legs", "Shoulders", "Arms", "Core", "Full body", "Calisthenics / Bodyweight", "Other"].map((item) => <option key={item}>{item}</option>)}</select></label><button className="primary-button full-button" type="submit"><Plus size={16} /> Add to workout</button></form></section></div>}
 
       {showNutritionForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowNutritionForm(false); }}><section className="modal panel" role="dialog" aria-modal="true" aria-labelledby="nutrition-modal-title"><button className="modal-close" aria-label="Close" onClick={() => setShowNutritionForm(false)}><X size={19} /></button><span className="eyebrow">DAILY FUEL</span><h2 id="nutrition-modal-title">Log nutrition</h2><p>Add your meal totals. You can leave any macro blank.</p><form onSubmit={submitNutrition}><div className="nutrition-form-grid"><label className="form-label">Calories<input type="number" min="0" max="10000" placeholder="0" value={nutritionForm.calories} onChange={(event) => setNutritionForm({ ...nutritionForm, calories: event.target.value })} /></label><label className="form-label">Protein (g)<input type="number" min="0" max="1000" placeholder="0" value={nutritionForm.protein} onChange={(event) => setNutritionForm({ ...nutritionForm, protein: event.target.value })} /></label><label className="form-label">Carbs (g)<input type="number" min="0" max="1000" placeholder="0" value={nutritionForm.carbs} onChange={(event) => setNutritionForm({ ...nutritionForm, carbs: event.target.value })} /></label><label className="form-label">Fat (g)<input type="number" min="0" max="1000" placeholder="0" value={nutritionForm.fat} onChange={(event) => setNutritionForm({ ...nutritionForm, fat: event.target.value })} /></label></div><button className="primary-button full-button" type="submit"><Check size={16} /> Save food log</button></form></section></div>}
-
-      {previewExercise && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewExercise(null); }}><section className="modal panel form-guide-modal" role="dialog" aria-modal="true" aria-labelledby="form-guide-title"><button className="modal-close" aria-label="Close form guide" onClick={() => setPreviewExercise(null)}><X size={19} /></button><span className="eyebrow">EXERCISE FORM GUIDE</span><h2 id="form-guide-title">{previewExercise}</h2><div className="video-player">{formGuideVideoLoading ? <p className="video-player-status" role="status">Finding a form video…</p> : formGuideVideoError ? <p className="video-player-status video-player-error" role="alert">{formGuideVideoError}</p> : formGuideVideoId && <iframe title={`${previewExercise} form guide video`} src={`https://www.youtube-nocookie.com/embed/${formGuideVideoId}`} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen />}</div><div className="form-guide-content"><h3>Form cues</h3><ol>{(formGuides[previewExercise.toLowerCase()] || ["Brace your core and begin with a comfortable, controlled range of motion.", "Keep your joints aligned and avoid rushing through the movement.", "Stop if you feel sharp pain; adjust your position or rest."]).map((tip) => <li key={tip}>{tip}</li>)}</ol></div></section></div>}
 
       {showStreakPopup && <div className="modal-backdrop streak-backdrop" role="presentation"><section className="modal panel streak-modal" role="dialog" aria-modal="true" aria-labelledby="streak-modal-title"><button className="modal-close" aria-label="Close streak reward" onClick={() => setShowStreakPopup(false)}><X size={19} /></button><span className="streak-reward-icon"><Flame size={27} /></span><span className="eyebrow">DAILY CHECK-IN REWARD</span><h2 id="streak-modal-title">Day {currentStreak} Streak Active! <span aria-hidden="true">🔥</span></h2><p>You showed up today. Keep your momentum going, one day at a time.</p><ActivityCalendar month={calendarMonth} workoutDays={data.workoutDays} streakDays={data.streakDays} onMonthChange={changeCalendarMonth} /><button className="primary-button full-button" onClick={() => setShowStreakPopup(false)}>Let&apos;s get moving <ArrowRight size={15} /></button></section></div>}
 
