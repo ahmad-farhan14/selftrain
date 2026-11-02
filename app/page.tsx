@@ -2,7 +2,7 @@
 
 import {
   Activity, ArrowLeft, ArrowRight, ArrowUpRight, BarChart3, Check, CheckCircle2, ChevronDown,
-  Clock3, Dumbbell, Flame, Pause, Play, Plus, RotateCcw, Settings2, Sparkles, Target, Timer, Trash2,
+  Clock3, Dumbbell, Flame, Pause, Play, Plus, RotateCcw, Search, Settings2, Sparkles, Target, Timer, Trash2,
   Utensils, Video, X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
@@ -12,7 +12,28 @@ import { getSupabaseClient } from "@/lib/supabase";
 type Exercise = { id: string; name: string; muscle: string; sets: SetEntry[] };
 type SetEntry = { id: string; weight: number; reps: number; done: boolean };
 type WorkoutLog = { name: string; muscle: string; setNumber: number; weight: number; reps: number; at: string };
-type NutritionLog = { calories: number; protein: number; carbs: number; fat: number; at: string };
+type NutritionLog = {
+  id?: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  at: string;
+  foodId?: string;
+  portionId?: string;
+  quantity?: number;
+};
+type FoodPortion = { id: string; label: { id: string; en: string }; multiplier: number };
+type FoodPreset = {
+  id: string;
+  name: { id: string; en: string };
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  defaultPortionId: string;
+  portions: FoodPortion[];
+};
 type SavedState = {
   exercises: Exercise[];
   workoutLogs: WorkoutLog[];
@@ -68,6 +89,72 @@ const programs = [
 ] as const;
 
 const timers = [30, 60, 90, 120];
+const foodPresets: FoodPreset[] = [
+  {
+    id: "nasi-goreng",
+    name: { id: "Nasi Goreng", en: "Indonesian fried rice" },
+    calories: 650, protein: 18, carbs: 90, fat: 24, defaultPortionId: "plate",
+    portions: [
+      { id: "plate", label: { id: "1 porsi", en: "1 serving" }, multiplier: 1 },
+      { id: "100g", label: { id: "100 gram", en: "100 grams" }, multiplier: 0.29 },
+      { id: "bowl", label: { id: "1 mangkok", en: "1 bowl" }, multiplier: 0.8 },
+    ],
+  },
+  {
+    id: "chicken-breast",
+    name: { id: "Dada Ayam", en: "Chicken breast" },
+    calories: 165, protein: 31, carbs: 0, fat: 3.6, defaultPortionId: "100g",
+    portions: [
+      { id: "100g", label: { id: "100 gram", en: "100 grams" }, multiplier: 1 },
+      { id: "serving", label: { id: "1 porsi (150 g)", en: "1 serving (150 g)" }, multiplier: 1.5 },
+    ],
+  },
+  {
+    id: "boiled-eggs",
+    name: { id: "Telur Rebus", en: "Boiled eggs" },
+    calories: 156, protein: 12.6, carbs: 1.2, fat: 10.6, defaultPortionId: "2-eggs",
+    portions: [
+      { id: "2-eggs", label: { id: "2 butir", en: "2 eggs" }, multiplier: 1 },
+      { id: "1-egg", label: { id: "1 butir", en: "1 egg" }, multiplier: 0.5 },
+    ],
+  },
+  {
+    id: "oats",
+    name: { id: "Oat", en: "Oats" },
+    calories: 152, protein: 5.3, carbs: 27, fat: 3, defaultPortionId: "bowl",
+    portions: [
+      { id: "bowl", label: { id: "1 mangkok (40 g)", en: "1 bowl (40 g)" }, multiplier: 1 },
+      { id: "100g", label: { id: "100 gram", en: "100 grams" }, multiplier: 2.5 },
+    ],
+  },
+  {
+    id: "milk",
+    name: { id: "Susu", en: "Milk" },
+    calories: 150, protein: 8, carbs: 12, fat: 8, defaultPortionId: "glass",
+    portions: [
+      { id: "glass", label: { id: "1 gelas (250 ml)", en: "1 glass (250 ml)" }, multiplier: 1 },
+      { id: "100ml", label: { id: "100 ml", en: "100 ml" }, multiplier: 0.4 },
+    ],
+  },
+  {
+    id: "tempeh",
+    name: { id: "Tempe", en: "Tempeh" },
+    calories: 192, protein: 20.3, carbs: 7.6, fat: 10.8, defaultPortionId: "100g",
+    portions: [
+      { id: "100g", label: { id: "100 gram", en: "100 grams" }, multiplier: 1 },
+      { id: "slice", label: { id: "1 potong (30 g)", en: "1 slice (30 g)" }, multiplier: 0.3 },
+    ],
+  },
+  {
+    id: "beef",
+    name: { id: "Daging Sapi", en: "Beef" },
+    calories: 250, protein: 26, carbs: 0, fat: 15, defaultPortionId: "100g",
+    portions: [
+      { id: "100g", label: { id: "100 gram", en: "100 grams" }, multiplier: 1 },
+      { id: "serving", label: { id: "1 porsi (150 g)", en: "1 serving (150 g)" }, multiplier: 1.5 },
+    ],
+  },
+];
 const bodyweightNames = new Set(["push-ups", "push up", "push-ups", "pull-ups", "pull up", "dips", "australian pull-ups", "bodyweight squats", "pike push-ups", "planks"]);
 const bodyweightExercises = ["Push-Ups", "Pull-Ups", "Dips", "Australian Pull-Ups", "Bodyweight Squats", "Pike Push-Ups", "Planks"];
 const formGuides: Record<string, { id: string[]; en: string[] }> = {
@@ -206,6 +293,10 @@ function formatTime(seconds: number) {
   return `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
 }
 
+function formatNutrient(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
 function ProgressBar({ value, max, color = "bg-emerald" }: { value: number; max: number; color?: string }) {
   const percent = Math.min(100, max > 0 ? (value / max) * 100 : 0);
   return <div className="progress-track"><div className={`progress-fill ${color}`} style={{ width: `${percent}%` }} /></div>;
@@ -303,8 +394,10 @@ export default function Home() {
   const [exerciseName, setExerciseName] = useState("");
   const [muscle, setMuscle] = useState("Chest");
   const [showExerciseForm, setShowExerciseForm] = useState(false);
-  const [showNutritionForm, setShowNutritionForm] = useState(false);
-  const [nutritionForm, setNutritionForm] = useState({ calories: "", protein: "", carbs: "", fat: "" });
+  const [foodSearch, setFoodSearch] = useState("");
+  const [selectedFoodId, setSelectedFoodId] = useState("");
+  const [selectedPortionId, setSelectedPortionId] = useState("");
+  const [foodQuantity, setFoodQuantity] = useState(1);
   const [authUser, setAuthUser] = useState<{ id: string; email?: string } | null>(null);
   const [cloudReady, setCloudReady] = useState(false);
   const [syncMessage, setSyncMessage] = useState("Saved on this device");
@@ -320,6 +413,14 @@ export default function Home() {
   const todayNutritionLogs = useMemo(() => {
     return data.nutritionLogs.filter((entry) => localDateKey(new Date(entry.at)) === todayKey);
   }, [data.nutritionLogs, todayKey]);
+  const visibleFoods = useMemo(() => {
+    const query = foodSearch.trim().toLocaleLowerCase();
+    return query
+      ? foodPresets.filter((food) => `${food.name.id} ${food.name.en}`.toLocaleLowerCase().includes(query))
+      : foodPresets;
+  }, [foodSearch]);
+  const selectedFood = foodPresets.find((food) => food.id === selectedFoodId);
+  const selectedPortion = selectedFood?.portions.find((portion) => portion.id === selectedPortionId);
   const nutrition = useMemo(() => todayNutritionLogs.reduce(
     (totals, entry) => ({ calories: totals.calories + entry.calories, protein: totals.protein + entry.protein, carbs: totals.carbs + entry.carbs, fat: totals.fat + entry.fat }),
     { calories: 0, protein: 0, carbs: 0, fat: 0 },
@@ -560,8 +661,8 @@ export default function Home() {
     setShowExerciseForm(false);
   }
 
-  function addNutrition(values: { calories: number; protein: number; carbs: number; fat: number }) {
-    const entry: NutritionLog = { ...values, at: new Date().toISOString() };
+  function addNutrition(values: Omit<NutritionLog, "id" | "at">) {
+    const entry: NutritionLog = { ...values, id: makeId(), at: new Date().toISOString() };
     setData((current) => ({ ...current, nutritionLogs: [entry, ...current.nutritionLogs].slice(0, 250) }));
     const supabase = getSupabaseClient();
     if (supabase && authUser) {
@@ -570,16 +671,26 @@ export default function Home() {
     }
   }
 
-  function submitNutrition(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function logSelectedFood() {
+    if (!selectedFood || !selectedPortion || !Number.isFinite(foodQuantity) || foodQuantity <= 0) return;
+    const multiplier = selectedPortion.multiplier * foodQuantity;
     addNutrition({
-      calories: Number(nutritionForm.calories) || 0,
-      protein: Number(nutritionForm.protein) || 0,
-      carbs: Number(nutritionForm.carbs) || 0,
-      fat: Number(nutritionForm.fat) || 0,
+      calories: Math.round(selectedFood.calories * multiplier),
+      protein: Math.round(selectedFood.protein * multiplier * 10) / 10,
+      carbs: Math.round(selectedFood.carbs * multiplier * 10) / 10,
+      fat: Math.round(selectedFood.fat * multiplier * 10) / 10,
+      foodId: selectedFood.id,
+      portionId: selectedPortion.id,
+      quantity: foodQuantity,
     });
-    setNutritionForm({ calories: "", protein: "", carbs: "", fat: "" });
-    setShowNutritionForm(false);
+    setFoodQuantity(1);
+  }
+
+  function removeNutrition(entry: NutritionLog) {
+    setData((current) => ({
+      ...current,
+      nutritionLogs: current.nutritionLogs.filter((item) => entry.id ? item.id !== entry.id : item !== entry),
+    }));
   }
 
   async function signIn() {
@@ -691,10 +802,10 @@ export default function Home() {
                 </section>
 
                 <section className="panel nutrition-panel">
-                  <div className="panel-heading"><div><span className="eyebrow">{isIndonesian ? "ASUPAN HARIAN" : "DAILY FUEL"}</span><h2>{isIndonesian ? "Nutrisi" : "Nutrition"}</h2></div><button className="icon-button" aria-label={isIndonesian ? "Catat makanan" : "Log food"} onClick={() => setShowNutritionForm(true)}><Plus size={18} /></button></div>
+                  <div className="panel-heading"><div><span className="eyebrow">{isIndonesian ? "ASUPAN HARIAN" : "DAILY FUEL"}</span><h2>{isIndonesian ? "Nutrisi" : "Nutrition"}</h2></div><button className="icon-button" aria-label={isIndonesian ? "Catat makanan" : "Log food"} onClick={() => setNav("nutrition")}><Plus size={18} /></button></div>
                   <div className="nutrition-summary"><span className="calorie-ring"><Flame size={18} /></span><div><strong>{nutrition.calories.toLocaleString()} <small>kcal</small></strong><span>{isIndonesian ? "dari target 2.000 harian" : "of 2,000 daily goal"}</span></div></div>
                   <div className="macro-row"><div className="macro-label"><span>Protein</span><strong>{nutrition.protein}<small> / 120g</small></strong></div><ProgressBar value={nutrition.protein} max={120} color="bg-emerald" /></div>
-                  <div className="macro-row"><div className="macro-label"><span>{isIndonesian ? "Karbohidrat" : "Carbs"}</span><strong>{nutrition.carbs}<small> / 250g</small></strong></div><ProgressBar value={nutrition.carbs} max={250} color="bg-purple" /></div>
+                  <div className="macro-row"><div className="macro-label"><span>{isIndonesian ? "Karbohidrat" : "Carbs"}</span><strong>{nutrition.carbs}<small> / 250g</small></strong></div><ProgressBar value={nutrition.carbs} max={250} color="bg-cyan" /></div>
                   <button className="quick-add-button" onClick={() => setNav("nutrition")}><Plus size={16} /> {isIndonesian ? "Tambah makanan cepat" : "Quick add food"}</button>
                 </section>
               </div>
@@ -772,21 +883,64 @@ export default function Home() {
                 <section className="panel nutrition-goals">
                   <div className="panel-heading"><div><span className="eyebrow">{isIndonesian ? "ASUPAN HARI INI" : "TODAY'S INTAKE"}</span><h2>{isIndonesian ? "Ringkasan harian" : "Daily overview"}</h2></div><span className="date-pill">{isIndonesian ? "Hari ini" : "Today"}</span></div>
                   <div className="calorie-large"><div className="calorie-ring big"><Flame size={21} /></div><div><strong>{nutrition.calories.toLocaleString()}</strong><span>{isIndonesian ? "kcal dikonsumsi" : "kcal consumed"} <i>/ {isIndonesian ? "2.000" : "2,000"} kcal</i></span></div></div>
-                  <ProgressBar value={nutrition.calories} max={2000} color="bg-orange" />
+                  <ProgressBar value={nutrition.calories} max={2000} color="bg-amber" />
                   <div className="macro-overview">
-                    {[{ name: "Protein", label: "Protein", idLabel: "Protein", value: nutrition.protein, goal: 120, color: "bg-emerald", unit: "g" }, { name: "Carbs", label: "Carbs", idLabel: "Karbohidrat", value: nutrition.carbs, goal: 250, color: "bg-purple", unit: "g" }, { name: "Fat", label: "Fat", idLabel: "Lemak", value: nutrition.fat, goal: 70, color: "bg-blue", unit: "g" }].map((macro) => <div className="macro-card" key={macro.name}><div><span>{isIndonesian ? macro.idLabel : macro.label}</span><strong>{macro.value}<small> / {macro.goal}{macro.unit}</small></strong></div><ProgressBar value={macro.value} max={macro.goal} color={macro.color} /></div>)}
+                    {[{ name: "Protein", label: "Protein", idLabel: "Protein", value: nutrition.protein, goal: 120, color: "bg-emerald", unit: "g" }, { name: "Carbs", label: "Carbs", idLabel: "Karbohidrat", value: nutrition.carbs, goal: 250, color: "bg-cyan", unit: "g" }, { name: "Fat", label: "Fat", idLabel: "Lemak", value: nutrition.fat, goal: 70, color: "bg-amber", unit: "g" }].map((macro) => <div className="macro-card" key={macro.name}><div><span>{isIndonesian ? macro.idLabel : macro.label}</span><strong>{formatNutrient(macro.value)}<small> / {macro.goal}{macro.unit}</small></strong></div><ProgressBar value={macro.value} max={macro.goal} color={macro.color} /></div>)}
                   </div>
                 </section>
-                <section className="panel quick-add-panel">
-                  <div className="panel-heading"><div><span className="eyebrow">{isIndonesian ? "PRAKTIS" : "LOW FRICTION"}</span><h2>{isIndonesian ? "Tambah cepat" : "Quick add"}</h2></div><span className="sparkle-badge"><Sparkles size={15} /></span></div>
-                  <p>{isIndonesian ? "Pilih preset untuk langsung mencatat." : "Tap a preset to log it instantly."}</p>
-                  <button className="preset-button calorie-preset" onClick={() => addNutrition({ calories: 250, protein: 0, carbs: 0, fat: 0 })}><span className="preset-symbol"><Flame size={18} /></span><span><strong>+250 kcal</strong><small>{isIndonesian ? "Tambah kalori cepat" : "Quick calorie add"}</small></span><Plus size={17} /></button>
-                  <button className="preset-button protein-preset" onClick={() => addNutrition({ calories: 0, protein: 25, carbs: 0, fat: 0 })}><span className="preset-symbol"><Target size={18} /></span><span><strong>+25g protein</strong><small>{isIndonesian ? "Protein shake / camilan" : "Protein shake / snack"}</small></span><Plus size={17} /></button>
-                  <button className="secondary-button full-button" onClick={() => setShowNutritionForm(true)}><Plus size={16} /> {isIndonesian ? "Catat detail makanan" : "Log meal details"}</button>
+                <section className="panel food-search-panel">
+                  <div className="panel-heading"><div><span className="eyebrow">{isIndonesian ? "PILIH MAKANAN" : "FOOD DATABASE"}</span><h2>{isIndonesian ? "Cari & catat" : "Search & log"}</h2></div><span className="sparkle-badge"><Utensils size={15} /></span></div>
+                  <label className="food-search-field"><Search size={16} /><input type="search" value={foodSearch} onChange={(event) => { setFoodSearch(event.target.value); setSelectedFoodId(""); setSelectedPortionId(""); }} placeholder={isIndonesian ? "Cari makanan atau pilih makanan umum" : "Search food or select common meals"} aria-label={isIndonesian ? "Cari makanan" : "Search foods"} /></label>
+                  {visibleFoods.length ? <div className="food-search-results" aria-label={isIndonesian ? "Makanan tersedia" : "Available foods"}>
+                    {visibleFoods.map((food) => <button key={food.id} type="button" className={`food-option ${selectedFoodId === food.id ? "selected" : ""}`} aria-pressed={selectedFoodId === food.id} onClick={() => { setSelectedFoodId(food.id); setSelectedPortionId(food.defaultPortionId); }}>
+                      <strong>{food.name[language]}</strong><span>{food.calories} kcal · {formatNutrient(food.protein)}g {isIndonesian ? "protein" : "protein"}</span>
+                    </button>)}
+                  </div> : <div className="food-search-empty">{isIndonesian ? "Makanan tidak ditemukan. Coba kata kunci lain." : "No foods found. Try another search."}</div>}
+                  {selectedFood && selectedPortion && <div className="food-portion-picker">
+                    <div className="selected-food-heading"><strong>{selectedFood.name[language]}</strong><span>{isIndonesian ? "Takaran & jumlah" : "Portion & quantity"}</span></div>
+                    <div className="food-portion-fields">
+                      <label className="form-label">{isIndonesian ? "Porsi" : "Portion"}<select value={selectedPortionId} onChange={(event) => setSelectedPortionId(event.target.value)}>{selectedFood.portions.map((portion) => <option key={portion.id} value={portion.id}>{portion.label[language]}</option>)}</select></label>
+                      <label className="form-label">{isIndonesian ? "Jumlah" : "Quantity"}<input type="number" min="0.25" max="20" step="0.25" value={foodQuantity} onChange={(event) => { const value = event.target.value; setFoodQuantity(value === "" ? 0 : Math.min(20, Math.max(0.25, Number(value)))); }} /></label>
+                    </div>
+                    <div className="food-calculation">
+                      <span>{Math.round(selectedFood.calories * selectedPortion.multiplier * foodQuantity)} kcal</span>
+                      <small>{formatNutrient(selectedFood.protein * selectedPortion.multiplier * foodQuantity)}g {isIndonesian ? "protein" : "protein"} · {formatNutrient(selectedFood.carbs * selectedPortion.multiplier * foodQuantity)}g {isIndonesian ? "karbohidrat" : "carbs"} · {formatNutrient(selectedFood.fat * selectedPortion.multiplier * foodQuantity)}g {isIndonesian ? "lemak" : "fat"}</small>
+                    </div>
+                    <button className="primary-button full-button food-log-button" type="button" disabled={!Number.isFinite(foodQuantity) || foodQuantity <= 0} onClick={logSelectedFood}><Plus size={16} /> {isIndonesian ? "Catat makanan" : "Log food"}</button>
+                  </div>}
+                  {!selectedFood && <p className="food-picker-hint">{isIndonesian ? "Pilih makanan untuk melihat ukuran porsi dan nutrisinya." : "Choose a food to see portion sizes and nutrition."}</p>}
                 </section>
               </div>
-              <section className="panel log-panel"><div className="panel-heading"><div><span className="eyebrow">{isIndonesian ? "CATATANMU" : "YOUR ENTRIES"}</span><h2>{isIndonesian ? "Catatan makanan hari ini" : "Today's food log"}</h2></div><span className="log-count">{data.nutritionLogs.length} {isIndonesian ? "entri" : "entries"}</span></div>
-                {todayNutritionLogs.length ? <div className="food-log-list">{todayNutritionLogs.map((entry, index) => <div className="food-log-entry" key={`${entry.at}-${index}`}><span className="food-log-icon"><Utensils size={16} /></span><span className="food-log-desc">{entry.calories ? (isIndonesian ? "Makanan / tambah cepat" : "Food / quick add") : (isIndonesian ? "Tambah protein cepat" : "Protein quick add")}<small>{new Date(entry.at).toLocaleTimeString(language === "id" ? "id-ID" : "en-US", { hour: "numeric", minute: "2-digit" })} · {entry.protein}g {isIndonesian ? "protein" : "protein"} · {entry.carbs}g {isIndonesian ? "karbohidrat" : "carbs"} · {entry.fat}g {isIndonesian ? "lemak" : "fat"}</small></span><strong>{entry.calories} <small>kcal</small></strong></div>)}</div> : <div className="empty-inline"><span className="empty-icon"><Utensils size={17} /></span><span>{isIndonesian ? "Belum ada makanan yang dicatat." : "No food logged yet."}<small>{isIndonesian ? "Gunakan tambah cepat untuk memulai." : "Use a quick add to get started."}</small></span></div>}
+              <section className="panel nutrition-quick-add">
+                <div className="quick-add-copy"><span className="eyebrow">{isIndonesian ? "OPSIONAL" : "OPTIONAL"}</span><h2>{isIndonesian ? "Tambah cepat" : "Quick add"}</h2><p>{isIndonesian ? "Catat tambahan tanpa memilih makanan." : "Log an extra without selecting a food."}</p></div>
+                <div className="quick-add-actions">
+                  <button className="preset-button calorie-preset" onClick={() => addNutrition({ calories: 250, protein: 0, carbs: 0, fat: 0, foodId: "quick-calories", portionId: "quick-add", quantity: 1 })}><span className="preset-symbol"><Flame size={18} /></span><span><strong>+250 kcal</strong><small>{isIndonesian ? "Tambah kalori cepat" : "Quick calorie add"}</small></span><Plus size={17} /></button>
+                  <button className="preset-button protein-preset" onClick={() => addNutrition({ calories: 0, protein: 25, carbs: 0, fat: 0, foodId: "quick-protein", portionId: "quick-add", quantity: 1 })}><span className="preset-symbol"><Target size={18} /></span><span><strong>+25g protein</strong><small>{isIndonesian ? "Protein shake / camilan" : "Protein shake / snack"}</small></span><Plus size={17} /></button>
+                </div>
+              </section>
+              <section className="panel log-panel"><div className="panel-heading"><div><span className="eyebrow">{isIndonesian ? "CATATANMU" : "YOUR ENTRIES"}</span><h2>{isIndonesian ? "Catatan makanan hari ini" : "Today's food log"}</h2></div><span className="log-count">{todayNutritionLogs.length} {isIndonesian ? "entri" : "entries"}</span></div>
+                {todayNutritionLogs.length ? <div className="food-log-list">{todayNutritionLogs.map((entry, index) => {
+                  const food = foodPresets.find((item) => item.id === entry.foodId);
+                  const title = food
+                    ? food.name[language]
+                    : entry.foodId === "quick-calories"
+                      ? (isIndonesian ? "Tambah kalori cepat" : "Quick calorie add")
+                      : entry.foodId === "quick-protein"
+                        ? (isIndonesian ? "Tambah protein cepat" : "Quick protein add")
+                        : (isIndonesian ? "Catatan makanan" : "Food entry");
+                  const portion = food && entry.portionId
+                    ? food.portions.find((item) => item.id === entry.portionId)?.label[language] || ""
+                    : entry.foodId?.startsWith("quick-")
+                      ? (isIndonesian ? "Tambah cepat" : "Quick add")
+                      : (isIndonesian ? "Porsi tidak tersedia" : "Portion unavailable");
+                  const portionText = portion && entry.quantity && entry.quantity !== 1 ? `${formatNutrient(entry.quantity)} × ${portion}` : portion;
+                  return <article className="food-log-entry food-log-card" key={entry.id || `${entry.at}-${index}`}>
+                    <span className="food-log-icon"><Utensils size={16} /></span>
+                    <span className="food-log-desc"><strong>{title}</strong><small>{portionText}</small><span className="food-log-meta">{new Date(entry.at).toLocaleTimeString(language === "id" ? "id-ID" : "en-US", { hour: "numeric", minute: "2-digit" })} · {formatNutrient(entry.protein)}g {isIndonesian ? "protein" : "protein"} · {formatNutrient(entry.carbs)}g {isIndonesian ? "karbohidrat" : "carbs"} · {formatNutrient(entry.fat)}g {isIndonesian ? "lemak" : "fat"}</span></span>
+                    <strong className="food-log-calories">{entry.calories} <small>kcal</small></strong>
+                    <button className="icon-button food-log-delete" type="button" aria-label={isIndonesian ? `Hapus ${title}` : `Delete ${title}`} onClick={() => removeNutrition(entry)}><Trash2 size={15} /></button>
+                  </article>;
+                })}</div> : <div className="empty-inline"><span className="empty-icon"><Utensils size={17} /></span><span>{isIndonesian ? "Belum ada makanan yang dicatat." : "No food logged yet."}<small>{isIndonesian ? "Cari makanan atau pilih tambah cepat untuk memulai." : "Search for a food or use quick add to get started."}</small></span></div>}
               </section>
               <footer className="footer-note"><span>{isIndonesian ? "Asupan baik, tubuh bugar." : "Fuel well. Feel good."}</span><span>{localizedSyncMessage(syncMessage, language)}</span></footer>
             </>
@@ -814,8 +968,6 @@ export default function Home() {
       </nav>
 
       {showExerciseForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowExerciseForm(false); }}><section className="modal panel" role="dialog" aria-modal="true" aria-labelledby="exercise-modal-title"><button className="modal-close" aria-label={isIndonesian ? "Tutup" : "Close"} onClick={() => setShowExerciseForm(false)}><X size={19} /></button><span className="eyebrow">{isIndonesian ? "SESUAIKAN LATIHAN" : "MAKE IT YOURS"}</span><h2 id="exercise-modal-title">{isIndonesian ? "Tambah latihan" : "Add an exercise"}</h2><p>{isIndonesian ? "Susun sesi sesuai kebutuhanmu." : "Build your session around what works for you."}</p><form onSubmit={addExercise}><label className="form-label">{isIndonesian ? "Nama latihan" : "Exercise name"}<input autoFocus required maxLength={60} list="exercise-suggestions" placeholder={isIndonesian ? "mis. Dumbbell shoulder press" : "e.g. Dumbbell shoulder press"} value={exerciseName} onChange={(event) => { setExerciseName(event.target.value); if (bodyweightExercises.some((name) => name.toLowerCase() === event.target.value.trim().toLowerCase())) setMuscle("Calisthenics / Bodyweight"); }} /><datalist id="exercise-suggestions">{bodyweightExercises.map((name) => <option key={name} value={name} />)}</datalist></label><label className="form-label">{isIndonesian ? "Kelompok otot" : "Muscle group"}<select value={muscle} onChange={(event) => setMuscle(event.target.value)}>{["Chest", "Back", "Legs", "Shoulders", "Arms", "Core", "Full body", "Calisthenics / Bodyweight", "Other"].map((item) => <option key={item} value={item}>{localizedMuscle(item, language)}</option>)}</select></label><button className="primary-button full-button" type="submit"><Plus size={16} /> {isIndonesian ? "Tambahkan ke latihan" : "Add to workout"}</button></form></section></div>}
-
-      {showNutritionForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowNutritionForm(false); }}><section className="modal panel" role="dialog" aria-modal="true" aria-labelledby="nutrition-modal-title"><button className="modal-close" aria-label={isIndonesian ? "Tutup" : "Close"} onClick={() => setShowNutritionForm(false)}><X size={19} /></button><span className="eyebrow">{isIndonesian ? "ASUPAN HARIAN" : "DAILY FUEL"}</span><h2 id="nutrition-modal-title">{isIndonesian ? "Catat nutrisi" : "Log nutrition"}</h2><p>{isIndonesian ? "Tambahkan total makanan. Makro boleh dikosongkan." : "Add your meal totals. You can leave any macro blank."}</p><form onSubmit={submitNutrition}><div className="nutrition-form-grid"><label className="form-label">{isIndonesian ? "Kalori" : "Calories"}<input type="number" min="0" max="10000" placeholder="0" value={nutritionForm.calories} onChange={(event) => setNutritionForm({ ...nutritionForm, calories: event.target.value })} /></label><label className="form-label">Protein (g)<input type="number" min="0" max="1000" placeholder="0" value={nutritionForm.protein} onChange={(event) => setNutritionForm({ ...nutritionForm, protein: event.target.value })} /></label><label className="form-label">{isIndonesian ? "Karbohidrat (g)" : "Carbs (g)"}<input type="number" min="0" max="1000" placeholder="0" value={nutritionForm.carbs} onChange={(event) => setNutritionForm({ ...nutritionForm, carbs: event.target.value })} /></label><label className="form-label">{isIndonesian ? "Lemak (g)" : "Fat (g)"}<input type="number" min="0" max="1000" placeholder="0" value={nutritionForm.fat} onChange={(event) => setNutritionForm({ ...nutritionForm, fat: event.target.value })} /></label></div><button className="primary-button full-button" type="submit"><Check size={16} /> {isIndonesian ? "Simpan catatan makanan" : "Save food log"}</button></form></section></div>}
 
       {showStreakPopup && <div className="modal-backdrop streak-backdrop" role="presentation"><section className="modal panel streak-modal" role="dialog" aria-modal="true" aria-labelledby="streak-modal-title"><button className="modal-close" aria-label={isIndonesian ? "Tutup hadiah streak" : "Close streak reward"} onClick={() => setShowStreakPopup(false)}><X size={19} /></button><span className="streak-reward-icon"><Flame size={27} /></span><span className="eyebrow">{isIndonesian ? "HADIAH CHECK-IN HARIAN" : "DAILY CHECK-IN REWARD"}</span><h2 id="streak-modal-title">{isIndonesian ? `Streak hari ke-${currentStreak} aktif!` : `Day ${currentStreak} Streak Active!`} <span aria-hidden="true">🔥</span></h2><p>{isIndonesian ? "Kamu sudah hadir hari ini. Jaga momentum, selangkah demi selangkah." : "You showed up today. Keep your momentum going, one day at a time."}</p><ActivityCalendar month={calendarMonth} workoutDays={data.workoutDays} streakDays={data.streakDays} onMonthChange={changeCalendarMonth} language={language} /><button className="primary-button full-button" onClick={() => setShowStreakPopup(false)}>{isIndonesian ? "Ayo mulai latihan" : "Let's get moving"} <ArrowRight size={15} /></button></section></div>}
 
