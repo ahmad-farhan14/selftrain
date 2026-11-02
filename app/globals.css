@@ -404,29 +404,14 @@ html, body, .app-shell { background: var(--page-bg); color: var(--text-primary);
   .topbar { gap: 8px; }
   .language-switcher select { min-width: 49px; height: 31px; padding: 0 6px; }
 }
-.food-search-panel { padding: 18px; }
-.food-search-field { display: flex; height: 42px; align-items: center; gap: 9px; margin: 15px 0 10px; padding: 0 11px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-raised); color: var(--text-muted); }
-.food-search-field:focus-within { border-color: var(--accent-cyan); }
-.food-search-field input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text-primary); font-size: 10px; }
-.food-search-field input::placeholder { color: #858b92; }
-.food-search-results { display: grid; max-height: 238px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; overflow-y: auto; padding: 1px; }
-.food-option { display: grid; min-height: 52px; align-content: center; gap: 4px; padding: 8px 9px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-raised); cursor: pointer; text-align: left; transition: border-color .2s ease, background .2s ease; }
-.food-option:hover, .food-option.selected { border-color: var(--accent-cyan); background: #263039; }
-.food-option strong { overflow: hidden; color: var(--text-primary); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.food-option span { color: var(--text-muted); font-size: 8px; }
-.food-search-empty, .food-picker-hint { margin: 12px 0 0; color: var(--text-muted); font-size: 10px; line-height: 1.5; }
-.food-portion-picker { margin-top: 13px; padding-top: 13px; border-top: 1px solid var(--border-subtle); }
-.selected-food-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
-.selected-food-heading strong { color: var(--text-primary); font-size: 11px; }
-.selected-food-heading span { color: var(--text-muted); font-size: 9px; }
-.food-portion-fields { display: grid; grid-template-columns: 1.4fr .6fr; gap: 9px; }
-.food-portion-fields .form-label { gap: 5px; font-size: 9px; }
-.food-portion-fields .form-label input, .food-portion-fields .form-label select { height: 36px; font-size: 10px; }
-.food-calculation { display: grid; gap: 3px; margin-top: 10px; padding: 9px 10px; border: 1px solid #35443c; border-radius: 10px; background: #202b27; }
-.food-calculation span { color: #8de3bb; font-size: 12px; font-weight: 700; }
-.food-calculation small { color: var(--text-muted); font-size: 9px; }
-.food-log-button { min-height: 38px; }
-.food-log-button:disabled { cursor: not-allowed; opacity: .5; }
+.meal-entry-panel { display: flex; flex-direction: column; justify-content: center; padding: 20px; }
+.meal-entry-panel > p { margin: 12px 0 3px; color: var(--text-muted); font-size: 10px; line-height: 1.5; }
+.meal-entry-panel .full-button { margin-top: 15px; }
+.meal-modal { width: min(100%, 470px); max-height: 90vh; overflow-y: auto; }
+.meal-modal > p { margin-bottom: 17px; }
+.meal-modal form { gap: 12px; }
+.meal-modal .form-label { gap: 6px; }
+.meal-form-note { margin: -2px 0 0; color: var(--text-muted); font-size: 9px; line-height: 1.5; }
 .nutrition-quick-add { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 13px; padding: 15px 18px; }
 .quick-add-copy { flex: 0 0 auto; }
 .quick-add-copy h2 { margin: 3px 0; color: var(--text-primary); font-size: 14px; }
@@ -453,7 +438,7 @@ html, body, .app-shell { background: var(--page-bg); color: var(--text-primary);
 .food-log-delete:hover { border-color: #9c554e; background: #3a2928; color: #ff9a8d; }
 @keyframes nutrition-shimmer { 0%, 20% { transform: translateX(-120%); } 75%, 100% { transform: translateX(120%); } }
 @media (max-width: 620px) {
-  .food-search-panel { padding: 14px; }
+  .meal-entry-panel { padding: 14px; }
   .nutrition-quick-add { align-items: stretch; flex-direction: column; gap: 11px; padding: 14px; }
   .quick-add-actions { width: 100%; gap: 7px; }
   .quick-add-actions .preset-button { gap: 7px; padding: 8px; }
