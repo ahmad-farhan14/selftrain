@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { formGuideVideos } from "@/lib/form-guide";
+import { findNutritionFood, nutritionFoods, scaleNutrition } from "@/lib/nutrition-foods";
 import { getSupabaseClient } from "@/lib/supabase";
 
 type Exercise = { id: string; name: string; muscle: string; sets: SetEntry[] };
@@ -22,6 +23,7 @@ type NutritionLog = {
   mealName?: string;
   portion?: string;
   foodId?: string;
+  presetFoodId?: string;
   portionId?: string;
   quantity?: number;
 };
@@ -329,7 +331,7 @@ export default function Home() {
   const [muscle, setMuscle] = useState("Chest");
   const [showExerciseForm, setShowExerciseForm] = useState(false);
   const [showAddMeal, setShowAddMeal] = useState(false);
-  const [mealForm, setMealForm] = useState({ name: "", portion: "", calories: "", protein: "", carbs: "", fat: "" });
+  const [mealForm, setMealForm] = useState({ name: "", presetFoodId: "", portion: "", quantity: "1", calories: "", protein: "", carbs: "", fat: "" });
   const [authUser, setAuthUser] = useState<{ id: string; email?: string } | null>(null);
   const [cloudReady, setCloudReady] = useState(false);
   const [syncMessage, setSyncMessage] = useState("Saved on this device");
@@ -337,6 +339,7 @@ export default function Home() {
   const todayKey = localDateKey(new Date());
   const currentStreak = calculateStreak(data.streakDays, todayKey);
   const isIndonesian = language === "id";
+  const selectedMealFood = nutritionFoods.find((food) => food.id === mealForm.presetFoodId);
 
   const stopwatchSeconds = data.stopwatchElapsed + (data.stopwatchStartedAt
     ? Math.max(0, Math.floor((Date.now() - new Date(data.stopwatchStartedAt).getTime()) / 1000))
@@ -598,19 +601,64 @@ export default function Home() {
   function submitMeal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = mealForm.name.trim();
+    const presetFood = selectedMealFood;
     const portion = mealForm.portion.trim();
+    const quantity = Number(mealForm.quantity);
     const calories = Number(mealForm.calories);
-    if (!name || !portion || !Number.isFinite(calories) || calories < 0) return;
+    if (!name || (!presetFood && !portion) || (presetFood && (!Number.isFinite(quantity) || quantity <= 0)) || !Number.isFinite(calories) || calories < 0) return;
     addNutrition({
-      mealName: name,
-      portion,
+      mealName: presetFood ? presetFood.name[language] : name,
+      presetFoodId: presetFood?.id,
+      quantity: presetFood ? quantity : undefined,
+      portion: presetFood ? `${formatNutrient(quantity)} × ${presetFood.serving[language]}` : portion,
       calories,
       protein: Number(mealForm.protein) || 0,
       carbs: Number(mealForm.carbs) || 0,
       fat: Number(mealForm.fat) || 0,
     });
-    setMealForm({ name: "", portion: "", calories: "", protein: "", carbs: "", fat: "" });
+    setMealForm({ name: "", presetFoodId: "", portion: "", quantity: "1", calories: "", protein: "", carbs: "", fat: "" });
     setShowAddMeal(false);
+  }
+
+  function updateMealName(name: string) {
+    const food = findNutritionFood(name);
+    if (food) {
+      const quantity = Number(mealForm.quantity) || 1;
+      setMealForm({
+        name: food.name[language],
+        presetFoodId: food.id,
+        portion: food.serving[language],
+        quantity: String(quantity),
+        calories: String(scaleNutrition(food.calories, quantity)),
+        protein: String(scaleNutrition(food.protein, quantity)),
+        carbs: String(scaleNutrition(food.carbs, quantity)),
+        fat: String(scaleNutrition(food.fat, quantity)),
+      });
+      return;
+    }
+    const wasPreset = Boolean(mealForm.presetFoodId);
+    setMealForm({
+      ...mealForm,
+      name,
+      presetFoodId: "",
+      portion: wasPreset ? "" : mealForm.portion,
+      ...(wasPreset ? { calories: "", protein: "", carbs: "", fat: "" } : {}),
+    });
+  }
+
+  function updateMealQuantity(quantityValue: string) {
+    const quantity = Number(quantityValue);
+    const food = nutritionFoods.find((item) => item.id === mealForm.presetFoodId);
+    setMealForm({
+      ...mealForm,
+      quantity: quantityValue,
+      ...(food && Number.isFinite(quantity) && quantity > 0 ? {
+        calories: String(scaleNutrition(food.calories, quantity)),
+        protein: String(scaleNutrition(food.protein, quantity)),
+        carbs: String(scaleNutrition(food.carbs, quantity)),
+        fat: String(scaleNutrition(food.fat, quantity)),
+      } : {}),
+    });
   }
 
   function removeNutrition(entry: NutritionLog) {
@@ -824,7 +872,8 @@ export default function Home() {
               <section className="panel log-panel"><div className="panel-heading"><div><span className="eyebrow">{isIndonesian ? "CATATANMU" : "YOUR ENTRIES"}</span><h2>{isIndonesian ? "Catatan makanan hari ini" : "Today's food log"}</h2></div><span className="log-count">{todayNutritionLogs.length} {isIndonesian ? "entri" : "entries"}</span></div>
                 {todayNutritionLogs.length ? <div className="food-log-list">{todayNutritionLogs.map((entry, index) => {
                   const legacyFood = legacyFoodNames[entry.foodId || ""];
-                  const title = entry.mealName || (legacyFood
+                  const presetFood = nutritionFoods.find((food) => food.id === entry.presetFoodId);
+                  const title = presetFood?.name[language] || entry.mealName || (legacyFood
                     ? legacyFood[language]
                     : entry.foodId === "quick-calories"
                       ? (isIndonesian ? "Tambah kalori cepat" : "Quick calorie add")
@@ -848,7 +897,9 @@ export default function Home() {
                       : oldPortion
                         ? oldPortion[language]
                         : (isIndonesian ? "Porsi tidak tersedia" : "Portion unavailable"));
-                  const portionText = !entry.portion && entry.quantity && entry.quantity !== 1 ? `${formatNutrient(entry.quantity)} × ${portion}` : portion;
+                  const portionText = presetFood && entry.quantity
+                    ? `${formatNutrient(entry.quantity)} × ${presetFood.serving[language]}`
+                    : !entry.portion && entry.quantity && entry.quantity !== 1 ? `${formatNutrient(entry.quantity)} × ${portion}` : portion;
                   return <article className="food-log-entry food-log-card" key={entry.id || `${entry.at}-${index}`}>
                     <span className="food-log-icon"><Utensils size={16} /></span>
                     <span className="food-log-desc"><strong>{title}</strong><small>{portionText}</small><span className="food-log-meta">{new Date(entry.at).toLocaleTimeString(language === "id" ? "id-ID" : "en-US", { hour: "numeric", minute: "2-digit" })} · {formatNutrient(entry.protein)}g {isIndonesian ? "protein" : "protein"} · {formatNutrient(entry.carbs)}g {isIndonesian ? "karbohidrat" : "carbs"} · {formatNutrient(entry.fat)}g {isIndonesian ? "lemak" : "fat"}</span></span>
@@ -891,16 +942,17 @@ export default function Home() {
 
       {showExerciseForm && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowExerciseForm(false); }}><section className="modal panel" role="dialog" aria-modal="true" aria-labelledby="exercise-modal-title"><button className="modal-close" aria-label={isIndonesian ? "Tutup" : "Close"} onClick={() => setShowExerciseForm(false)}><X size={19} /></button><span className="eyebrow">{isIndonesian ? "SESUAIKAN LATIHAN" : "MAKE IT YOURS"}</span><h2 id="exercise-modal-title">{isIndonesian ? "Tambah latihan" : "Add an exercise"}</h2><p>{isIndonesian ? "Susun sesi sesuai kebutuhanmu." : "Build your session around what works for you."}</p><form onSubmit={addExercise}><label className="form-label">{isIndonesian ? "Nama latihan" : "Exercise name"}<input autoFocus required maxLength={60} list="exercise-suggestions" placeholder={isIndonesian ? "mis. Dumbbell shoulder press" : "e.g. Dumbbell shoulder press"} value={exerciseName} onChange={(event) => { setExerciseName(event.target.value); if (bodyweightExercises.some((name) => name.toLowerCase() === event.target.value.trim().toLowerCase())) setMuscle("Calisthenics / Bodyweight"); }} /><datalist id="exercise-suggestions">{bodyweightExercises.map((name) => <option key={name} value={name} />)}</datalist></label><label className="form-label">{isIndonesian ? "Kelompok otot" : "Muscle group"}<select value={muscle} onChange={(event) => setMuscle(event.target.value)}>{["Chest", "Back", "Legs", "Shoulders", "Arms", "Core", "Full body", "Calisthenics / Bodyweight", "Other"].map((item) => <option key={item} value={item}>{localizedMuscle(item, language)}</option>)}</select></label><button className="primary-button full-button" type="submit"><Plus size={16} /> {isIndonesian ? "Tambahkan ke latihan" : "Add to workout"}</button></form></section></div>}
 
-      {showAddMeal && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowAddMeal(false); }}><section className="modal panel meal-modal" role="dialog" aria-modal="true" aria-labelledby="meal-modal-title"><button className="modal-close" aria-label={isIndonesian ? "Tutup" : "Close"} onClick={() => setShowAddMeal(false)}><X size={19} /></button><span className="eyebrow">{isIndonesian ? "ASUPAN HARIAN" : "DAILY INTAKE"}</span><h2 id="meal-modal-title">{isIndonesian ? "Tambah makanan" : "Add meal"}</h2><p>{isIndonesian ? "Isi nilai nutrisi sesuai porsi yang kamu makan." : "Enter nutrition values for the portion you ate."}</p><form onSubmit={submitMeal}>
-        <label className="form-label">{isIndonesian ? "Nama makanan" : "Meal name"}<input autoFocus required maxLength={80} placeholder={isIndonesian ? "mis. Nasi Goreng, Dada Ayam" : "e.g. Fried rice, chicken breast"} value={mealForm.name} onChange={(event) => setMealForm({ ...mealForm, name: event.target.value })} /></label>
-        <label className="form-label">{isIndonesian ? "Porsi / jumlah" : "Portion / quantity"}<input required maxLength={60} placeholder={isIndonesian ? "mis. 1 porsi, 100g" : "e.g. 1 serving, 100g"} value={mealForm.portion} onChange={(event) => setMealForm({ ...mealForm, portion: event.target.value })} /></label>
-        <label className="form-label">{isIndonesian ? "Kalori (kcal)" : "Calories (kcal)"}<input required type="number" min="0" max="10000" step="1" placeholder="0" value={mealForm.calories} onChange={(event) => setMealForm({ ...mealForm, calories: event.target.value })} /></label>
+      {showAddMeal && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowAddMeal(false); }}><section className="modal panel meal-modal" role="dialog" aria-modal="true" aria-labelledby="meal-modal-title"><button className="modal-close" aria-label={isIndonesian ? "Tutup" : "Close"} onClick={() => setShowAddMeal(false)}><X size={19} /></button><span className="eyebrow">{isIndonesian ? "ASUPAN HARIAN" : "DAILY INTAKE"}</span><h2 id="meal-modal-title">{isIndonesian ? "Tambah makanan" : "Add meal"}</h2><p>{isIndonesian ? "Pilih makanan atau masukkan nutrisi makanan khusus." : "Choose a food or enter nutrition for a custom meal."}</p><form onSubmit={submitMeal}>
+        <label className="form-label">{isIndonesian ? "Nama makanan" : "Meal name"}<input autoFocus required maxLength={80} list="nutrition-food-suggestions" placeholder={isIndonesian ? "mis. Nasi Goreng, Dada Ayam" : "e.g. Fried rice, chicken breast"} value={selectedMealFood?.name[language] || mealForm.name} onChange={(event) => updateMealName(event.target.value)} /><datalist id="nutrition-food-suggestions">{nutritionFoods.map((food) => <option key={food.id} value={food.name[language]} />)}</datalist></label>
+        {selectedMealFood && <label className="form-label">{isIndonesian ? "Jumlah porsi" : "Portion quantity"}<input required type="number" min="0.1" max="100" step="0.1" inputMode="decimal" value={mealForm.quantity} onChange={(event) => updateMealQuantity(event.target.value)} /><small className="meal-form-note">{isIndonesian ? `1 porsi standar: ${selectedMealFood.serving[language]}` : `1 standard serving: ${selectedMealFood.serving[language]}`}</small></label>}
+        <label className="form-label">{isIndonesian ? "Ukuran porsi" : "Serving size"}<input required maxLength={60} placeholder={isIndonesian ? "mis. 100 g atau 1 mangkok" : "e.g. 100 g or 1 bowl"} value={selectedMealFood?.serving[language] || mealForm.portion} disabled={Boolean(selectedMealFood)} onChange={(event) => setMealForm({ ...mealForm, portion: event.target.value })} /></label>
+        <label className="form-label">{isIndonesian ? "Kalori (kcal)" : "Calories (kcal)"}<input required type="number" min="0" max="10000" step="0.1" placeholder="0" value={mealForm.calories} onChange={(event) => setMealForm({ ...mealForm, calories: event.target.value })} /></label>
         <div className="nutrition-form-grid">
           <label className="form-label">{isIndonesian ? "Protein (g)" : "Protein (g)"}<input type="number" min="0" max="1000" step="0.1" placeholder="0" value={mealForm.protein} onChange={(event) => setMealForm({ ...mealForm, protein: event.target.value })} /></label>
           <label className="form-label">{isIndonesian ? "Karbohidrat (g)" : "Carbs (g)"}<input type="number" min="0" max="1000" step="0.1" placeholder="0" value={mealForm.carbs} onChange={(event) => setMealForm({ ...mealForm, carbs: event.target.value })} /></label>
           <label className="form-label">{isIndonesian ? "Lemak (g)" : "Fat (g)"}<input type="number" min="0" max="1000" step="0.1" placeholder="0" value={mealForm.fat} onChange={(event) => setMealForm({ ...mealForm, fat: event.target.value })} /></label>
         </div>
-        <p className="meal-form-note">{isIndonesian ? "Protein, karbohidrat, dan lemak opsional; otomatis 0 jika kosong." : "Protein, carbs, and fat are optional; blank values default to 0."}</p>
+        <p className="meal-form-note">{selectedMealFood ? (isIndonesian ? "Nilai standar dapat berbeda menurut resep atau merek; sesuaikan sebelum disimpan." : "Standard values may vary by recipe or brand; adjust them before logging.") : (isIndonesian ? "Makanan khusus: masukkan kalori dan makro secara manual. Nilai makro kosong menjadi 0." : "Custom food: enter calories and macros manually. Blank macros default to 0.")}</p>
         <button className="primary-button full-button" type="submit"><Check size={16} /> {isIndonesian ? "Tambahkan ke catatan" : "Add to Log"}</button>
       </form></section></div>}
 

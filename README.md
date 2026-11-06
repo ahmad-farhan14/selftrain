@@ -35,5 +35,5 @@ Enable the YouTube Data API v3 in a Google Cloud project, create an API key, and
 - Responsive desktop sidebar and mobile bottom navigation in a dark emerald-accented theme.
 - Starter workout templates including a no-equipment calisthenics plan, custom exercises, per-set weight/reps, completion, form guides, stopwatch, and configurable rest timer.
 - Daily login streak, workout calendar, and a first-visit streak reward.
-- Calorie and macro goals, one-tap calorie/protein presets, and manual food logging.
+- Calorie and macro goals, one-tap calorie/protein presets, and bilingual food logging with 127 local nutrition presets, serving scaling, and manual custom-food macros.
 - LocalStorage persistence with optional Supabase Auth and database sync.
